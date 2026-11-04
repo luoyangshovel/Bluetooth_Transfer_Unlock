@@ -42,7 +42,7 @@ android {
 }
 
 dependencies {
-    // Provided by the LSPosed / Vector framework at runtime; never packaged into the APK.
+    // Provided by the LSPosed framework at runtime; never packaged into the APK.
     compileOnly 'io.github.libxposed:api:102.0.0'
     // libxposed:api publishes no transitive dependencies of its own, and its sources
     // (and ours) are annotated with the androidx nullability markers. Non-transitive so

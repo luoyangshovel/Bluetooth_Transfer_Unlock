@@ -1,6 +1,9 @@
 # Bluetooth Transfer Unlock
 
-> LSPosed / Vector module built on the **modern libxposed API (102)** — no UI, no Activity, no settings screen.
+> **注意，本人只对Android系统有少量了解，项目中本人只提供想法，所有修改均为AIGC，使用前务必审查项目代码防止出现不可逆破坏。**
+> EN: the author only knows a little about Android and supplied the ideas — every change here is AI-generated. Review the code before you use it; these hooks touch the system Bluetooth stack.
+
+> LSPosed module built on the **modern libxposed API (102)** — no UI, no Activity, no settings screen.
 > It lifts four Bluetooth OPP limitations: receive any file type, send any file type, stay discoverable
 > without opening the pairing screen, and show up in **every** app's share sheet.
 > Install the APK, enable the module, tick the scope, restart the target process — there is nothing to configure.
@@ -44,7 +47,7 @@ JAVA_HOME="<你的 JDK 17 路径>" ./gradlew :app:assembleDebug :app:assembleRel
 
 ## 2. 启用
 
-1. 安装 APK → LSPosed / Vector 里启用 **Bluetooth Transfer Unlock**。
+1. 安装 APK → LSPosed 里启用 **Bluetooth Transfer Unlock**。
    模块靠 APK 内的 `META-INF/xposed/java_init.list` 被识别（LSPosed `ModuleUtil.getModernModuleApk()` 只看这个文件），
    manifest 里**没有** legacy 的 `xposedmodule/xposedminversion/xposedscope` meta-data，这是现代 API 的要求。
 2. 勾选作用域。`module.prop` 里 `staticScope=true`，APK 内的 `scope.list` 只负责预填默认值（`com.android.bluetooth` + `system`），装好后在 LSPosed 里仍可逐条勾选：

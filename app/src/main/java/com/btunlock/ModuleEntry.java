@@ -21,7 +21,7 @@ import io.github.libxposed.api.XposedModule;
 /**
  * Module entry. There is no activity and no configuration to write: the scope is
  * fixed in {@code META-INF/xposed/scope.list} and {@code module.prop} declares it
- * as static, so enabling the module in LSPosed (or Vector) and restarting the
+ * as static, so enabling the module in LSPosed and restarting the
  * target process is all it takes.
  */
 public class ModuleEntry extends XposedModule {

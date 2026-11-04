@@ -1,30 +1,31 @@
 # Bluetooth Transfer Unlock
 
 > **注意，本人只对Android系统有少量了解，项目中本人只提供想法，所有修改均为AIGC，使用前务必审查项目代码防止出现不可逆破坏。**
-> EN: the author only knows a little about Android and supplied the ideas — every change here is AI-generated. Review the code before you use it; these hooks touch the system Bluetooth stack.
-
-> LSPosed module built on the **modern libxposed API (102)** — no UI, no Activity, no settings screen.
-> It lifts four Bluetooth OPP limitations: receive any file type, send any file type, stay discoverable
-> without opening the pairing screen, and show up in **every** app's share sheet.
-> Install the APK, enable the module, tick the scope, restart the target process — there is nothing to configure.
 >
-> 中文文档见下（本工程只有中文 README，以上是英文摘要）。
+> **Note:** the author only knows a little about Android and supplied the ideas — every change in this repository is AI-generated. Review the code before you use it; these hooks touch the system Bluetooth stack.
 
-| 功能 | 一句话 |
-| :- | :- |
-| 一 | 接收端不再按 MIME 白名单拒绝任何文件类型 |
-| 二 | 发送端不再因为没有类型 / 类型不认识而中断分享 |
-| 三 | 永久可被搜索：蓝牙一打开就自己断言 discoverable，不用进配对页面，也不会被超时降级 |
-| 四 | 蓝牙出现在**任何** App 的分享面板里，不再只有 zip/图片/视频能看到 |
+中文在前，英文跟在每一节之后。**Chinese first, English follows each section.**
 
+| 功能 | 一句话 | Feature | In one line |
+| :- | :- | :- | :- |
+| 一 | 接收端不再按 MIME 白名单拒绝任何文件类型 | 1 | inbound transfers are no longer rejected by the MIME accept-list |
+| 二 | 发送端不再因为没有类型 / 类型不认识而中断分享 | 2 | outbound shares no longer break on a missing / unknown type |
+| 三 | 永久可被搜索：蓝牙一打开就自己断言 discoverable，不用进配对页面，也不会被超时降级 | 3 | permanently discoverable: the module asserts it as soon as Bluetooth is on — no pairing screen, no timeout downgrade |
+| 四 | 蓝牙出现在**任何** App 的分享面板里，不再只有 zip/图片/视频能看到 | 4 | Bluetooth shows up in **every** app's share sheet, not only for zip/image/video |
+
+> **风险提示**：功能三让设备在蓝牙打开期间随时可被扫描到，这是一个隐私权衡；不想被别人搜到就关掉蓝牙。功能四是注入 system_server 的全局 hook，会影响整机所有分享面板。
+>
+> **Risk:** feature 3 keeps the device discoverable whenever Bluetooth is on — a privacy trade-off, so switch Bluetooth off when you don't want to be found. Feature 4 is a global system_server hook that affects every share sheet on the device.
+
+这是一个 LSPosed 模块，用现代 libxposed API（102）实现：**无 UI、无 Activity、无配置界面**，启用模块、勾选作用域、重启目标进程即可，没有需要点的开关。
+作用域只勾 `com.android.bluetooth` 就能拿到功能一/二/三；`system` 只为功能四存在（见 §2）。
 工程里没有 `de.robv.android.xposed.*`，全部走 `io.github.libxposed:api:102.0.0`（`compileOnly`，不打进 APK）。
 
-> **风险提示**：功能三让设备在蓝牙打开期间随时可被扫描到，这是一个隐私权衡；不想被别人搜到就关掉蓝牙。
-> 功能四是注入 system_server 的全局 hook，会影响整机所有分享面板。
+**EN** — A LSPosed module built on the **modern libxposed API (102)**: no UI, no Activity, no settings screen. Install the APK, enable the module, tick the scope, restart the target process — there is nothing to configure. The source contains no `de.robv.android.xposed.*` at all; everything goes through `io.github.libxposed:api:102.0.0` (`compileOnly`, never packaged).
 
 ---
 
-## 1. 构建
+## 1. 构建 / Building
 
 - JDK 17（`JAVA_HOME` 指向本机任意一个 JDK 17）
 - Gradle 9.3.1（wrapper 随仓库带上）+ AGP 9.1.0
@@ -45,7 +46,9 @@ JAVA_HOME="<你的 JDK 17 路径>" ./gradlew :app:assembleDebug :app:assembleRel
 `gradle.properties` 里的 `kotlin.stdlib.default.dependency=false` 是刻意的：纯 Java 模块不该把 kotlin-stdlib 打进 APK；
 `androidx.annotation` 也只作为 `compileOnly` + `transitive = false` 存在，只为 `@NonNull/@Nullable`。
 
-## 2. 启用
+**EN** — JDK 17 (any local install, point `JAVA_HOME` at it), Gradle 9.3.1 via the checked-in wrapper, AGP 9.1.0, compile/target SDK 36, minSdk 26. The only dependencies are `io.github.libxposed:api:102.0.0` and `androidx.annotation:annotation-jvm`, both `compileOnly`, so the first build needs network access. Output is roughly 26 KB for release; both build types keep minification off (see §7), and release currently reuses the debug `signingConfig` — replace it before distributing. `kotlin.stdlib.default.dependency=false` in `gradle.properties` and the non-transitive annotation dependency are deliberate: a pure Java module must not ship kotlin-stdlib.
+
+## 2. 启用 / Enabling
 
 1. 安装 APK → LSPosed 里启用 **Bluetooth Transfer Unlock**。
    模块靠 APK 内的 `META-INF/xposed/java_init.list` 被识别（LSPosed `ModuleUtil.getModernModuleApk()` 只看这个文件），
@@ -58,32 +61,37 @@ JAVA_HOME="<你的 JDK 17 路径>" ./gradlew :app:assembleDebug :app:assembleRel
    - 功能一/二/三：蓝牙进程要重启。最省事是关掉蓝牙再打开（`AdapterService` 进程随之重启），或 `adb shell am force-stop com.android.bluetooth`。
    - **功能四必须重启整机**（system_server 不会因为蓝牙进程重启而重新加载模块）。LSPosed 管理器里可以直接"重启系统"。
 
-## 3. 各 Android 版本已核实的 Hook 点
+**EN** —
+1. Install the APK, enable the module in LSPosed. It is recognised through `META-INF/xposed/java_init.list` (LSPosed's `ModuleUtil.getModernModuleApk()` only looks at that file); the manifest deliberately carries **no** legacy `xposedmodule` / `xposedminversion` / `xposedscope` meta-data, as the modern API requires.
+2. Scope. `staticScope=true` means `scope.list` only pre-fills the defaults (`com.android.bluetooth` + `system`); you can still tick each entry separately. `com.android.bluetooth` holds the whole of features 1/2/3 (OPP + btservice) — **that one entry is enough if you don't want feature 4**. `system` is the **only** switch for feature 4: intent resolution runs in system_server, and it also covers the handful of ROMs that keep scan-mode bookkeeping in the framework. Do not use `android` — LSPosed reads `scope.list` verbatim, line by line, and the `android`↔`system` alias exists only for legacy `xposedscope`. A wrong token means the module never reaches system_server, so feature 4 dies silently while features 1/2/3 install normally, which looks like broken hook code.
+3. Restart the target: features 1/2/3 need the Bluetooth process restarted (toggling Bluetooth off and on is the easiest way, or `adb shell am force-stop com.android.bluetooth`); **feature 4 requires a full reboot**, because system_server does not reload the module when the Bluetooth process restarts. LSPosed's manager has a "reboot" button.
 
-类名/方法名写在表里，但代码里**不硬编码签名**：类按候选名查，方法按"名字 + 参数形状"匹配，找不到就静默跳过并打 WARN 日志（见 §6）。
+## 3. 各 Android 版本已核实的 Hook 点 / Verified hook points per Android version
 
-| Android | 源码位置 | 功能一（接收） | 功能二（发送） | 功能三（可发现） |
+类名/方法名写在表里，但代码里**不硬编码签名**：类按候选名查，方法按"名字 + 参数形状"匹配，找不到就静默跳过并打 WARN 日志（见 §6）。表体是框架符号，中文说明由本节末尾的英文段落统一覆盖。
+
+| Android | 源码位置 / source | 功能一（接收）/ receive | 功能二（发送）/ send | 功能三（可发现）/ discoverable |
 | :- | :- | :- | :- | :- |
 | 9 / 10 / 11 / 12 | `packages/apps/Bluetooth` | `opp.BluetoothOppObexServerSession.onPut(javax.obex.Operation)`；`opp.Constants.mimeTypeMatches(String,String[])` + 私有 `(String,String)`；`Constants.ACCEPTABLE_SHARE_INBOUND_TYPES` | `opp.BluetoothOppLauncherActivity.onCreate` 的 `stream != null && type != null` 门；`opp.BluetoothOppSendFileInfo.generateFileInfo(Context,Uri,String,boolean)`；`opp.BluetoothOppManager.saveSendingFileInfo(String,…)` | `BluetoothAdapter.setScanMode(int,int)` → `btservice.AdapterService.setScanMode(int,int)` → `setDiscoverableTimeout(int)` → `AdapterProperties.setDiscoverableTimeout(int)` → `BT_PROPERTY_ADAPTER_DISCOVERABLE_TIMEOUT`；同一条链上 `AdapterProperties.setScanMode(int)` 收的是 `convertScanModeToHal` **之后**的 HAL 值 2（见 §4） |
-| 13 / 14 / 15 / 16 | `packages/modules/Bluetooth/android/app`（蓝牙 APK 已进主线 APEX `/apex/com.android.btservices`，包名不变） | **同一套逻辑**，只是 `onPut(com.android.obex.Operation)`、`isWhitelisted` 改名 `isAcceptlisted` | 同上 | `BluetoothAdapter.setScanMode(int)` + `setDiscoverableTimeout(Duration)` → binder `AdapterService$AdapterServiceBinder` → `AdapterProperties.setDiscoverableTimeout(int)` |
+| 13 / 14 / 15 / 16 | `packages/modules/Bluetooth/android/app`（蓝牙 APK 已进主线 APEX `/apex/com.android.btservices`，包名不变） | **同一套逻辑 / same logic**，只是 `onPut(com.android.obex.Operation)`、`isWhitelisted` 改名 `isAcceptlisted` | 同上 / same as above | `BluetoothAdapter.setScanMode(int)` + `setDiscoverableTimeout(Duration)` → binder `AdapterService$AdapterServiceBinder` → `AdapterProperties.setDiscoverableTimeout(int)` |
 
 功能一在 Android 14 源码里对应的拒绝分支（逐条核对）：
 
 ```java
-if (length == 0)            return OBEX_HTTP_LENGTH_REQUIRED;   // 保留
-if (name == null||isEmpty)  return OBEX_HTTP_BAD_REQUEST;       // 保留
-if (dotIndex < 0 && mimeType == null) return OBEX_HTTP_BAD_REQUEST; // 保留
+if (length == 0)            return OBEX_HTTP_LENGTH_REQUIRED;   // 保留 / kept
+if (name == null||isEmpty)  return OBEX_HTTP_BAD_REQUEST;       // 保留 / kept
+if (dotIndex < 0 && mimeType == null) return OBEX_HTTP_BAD_REQUEST; // 保留 / kept
 type = map.getMimeTypeFromExtension(extension);
-if (type == null && mimeType == null) return OBEX_HTTP_UNSUPPORTED_TYPE; // 打开
+if (type == null && mimeType == null) return OBEX_HTTP_UNSUPPORTED_TYPE; // 打开 / opened
 if (mimeType == null || (!isAcceptlisted && !Constants.mimeTypeMatches(mimeType, ACCEPTABLE_SHARE_INBOUND_TYPES)))
-                            return OBEX_HTTP_UNSUPPORTED_TYPE;  // 打开
+                            return OBEX_HTTP_UNSUPPORTED_TYPE;  // 打开 / opened
 ```
 
 对应 hook（`setId` 前缀 `btu:`，重复安装是替换而不是叠加）：
 
-| hook id | 位置 | 动作 |
+| hook id | 位置 / where | 动作 / behaviour |
 | :- | :- | :- |
-| `receive.acceptList` | `Constants` 里所有 `static boolean` 且形如 `(String, String[]|String|List)` 的类型匹配方法 | 直接返回 `true`，不再查白名单 |
+| `receive.acceptList` | `Constants` 里所有 `static boolean` 且形如 `(String, String[]|String|List)` 的类型匹配方法 | 直接返回 `true`，不再查白名单 / always `true`, the accept-list is never consulted |
 | `receive.onPut` | `BluetoothOppObexServerSession.onPut` | 打开一个线程内的"放宽窗口"，并 `deoptimize()` 该方法对抗内联 |
 | `receive.extension` | `android.webkit.MimeTypeMap.getMimeTypeFromExtension` | 仅在放宽窗口内、且扩展名查不到时返回 `application/octet-stream`；窗口外原样返回 |
 | `send.launcher` | `BluetoothOppLauncherActivity.onCreate/onNewIntent` | `ACTION_SEND(_MULTIPLE)` 且 `EXTRA_STREAM` 存在而 type 缺失/`*/*` 时，按 `ContentResolver.getType` → 扩展名 → `application/octet-stream` 补一个类型 |
@@ -94,7 +102,9 @@ if (mimeType == null || (!isAcceptlisted && !Constants.mimeTypeMatches(mimeType,
 | `scan.capture` | `AdapterService.onCreate` / `onAdapterEnabled` / `processProfileServiceStateChanged` / `setState` | 在任何人请求 scan mode 之前拿到 `AdapterService`（并顺带取出它的 `AdapterProperties` 字段）；断言阶梯 = 公开 API → 这两个实例，见 §4 |
 | `share.resolver` | system_server `queryIntentActivities(Intent, String, …)`（Android 13+ 在 `IPackageManagerBase`，Android 9-12 在 `PackageManagerService`） | 给 `ACTION_SEND(_MULTIPLE)` 的结果追加真实蓝牙条目（见 §5） |
 
-## 4. 功能三：永久可发现，不用进配对页面
+**EN** — The tables above are framework symbols, so they are not translated; the reading is: class names are looked up from a candidate list, methods are matched by *name + parameter shape*, and anything missing is skipped silently with a WARN (see §6) rather than crashing the host process. Feature 1 replaces the OPP type-matching predicate with `true` and opens a per-thread relaxation window around `onPut`, inside which an unknown file extension maps to `application/octet-stream`. Feature 2 fills in a MIME type at the OPP launcher and in `generateFileInfo` / `saveSendingFileInfo`, substituting only parameters declared `String` that are actually `null`. Feature 3 clamps every discoverable-timeout overload to 0 and hooks `setScanMode` per layer. Feature 4 appends a real Bluetooth entry to the `ACTION_SEND` resolution result inside system_server.
+
+## 4. 功能三：永久可发现，不用进配对页面 / Feature 3: discoverable without the pairing screen
 
 原生 Android 只在配对页面打开的那几十秒里请求 `SCAN_MODE_CONNECTABLE_DISCOVERABLE`，页面一关、超时一到就降回 connectable，别的手机自然搜不到。只把超时钳成 0 是不够的——那只能**延长别人已经请求过**的可发现窗口：机器开机后没人进过配对页，scan mode 从头到尾就是 connectable，钳了个寂寞。
 
@@ -114,7 +124,15 @@ if (mimeType == null || (!isAcceptlisted && !Constants.mimeTypeMatches(mimeType,
 - **关蓝牙**：只有实时状态是 `STATE_ON` 才补，模块从不调用 `enable()`；关掉再打开时，姿态在 enable 回调里重新生效。
 - **别的 UID 明确请求别的 scan mode**：解除 pin，日志会写"re-pinned when Bluetooth is on again"，即下次蓝牙开关时恢复。
 
-## 5. 功能四：为什么"分享面板没有蓝牙"，以及怎么改
+**EN** — Stock Android requests `SCAN_MODE_CONNECTABLE_DISCOVERABLE` only for the tens of seconds the pairing screen is open, then drops back to connectable when the timeout fires, so no other phone can see the device. Clamping the timeout to 0 is not enough: it only lengthens a discoverable window somebody already requested. On a phone nobody ever opened the pairing page for, the scan mode is connectable from boot onwards, so there is nothing to lengthen.
+
+Discoverable is therefore a **posture the module maintains itself**: `scan.capture` grabs the `AdapterService` instance in `onCreate()` (plus its `AdapterProperties` field by reflection) before anyone asks for a scan mode; every enable callback, property change and 5 s watchdog tick runs a `verify()` that reads the live scan mode and re-asserts it if needed; the re-assert walks a ladder — public `BluetoothAdapter#setScanMode` first (same road the pairing screen takes, so the ROM converts the encoding itself), then `AdapterService#setScanMode`, and only last `AdapterProperties#setScanMode`, and each attempt goes through `invokeOriginal` so that the module's own timeout clamp cannot zero the duration it just chose and `learn()` cannot mistake its own request for the ROM teaching it the encoding.
+
+**The encoding trap (Android 9-12)**: in those versions `AdapterService#setScanMode(int, int)` runs `setDiscoverableTimeout(duration)` → `convertScanModeToHal(mode)` → `AdapterProperties#setScanMode(hal)`, so `AdapterProperties` expects the **HAL value 2**, not the framework value 23. Write 23 there and the Java layer stays quiet while the stack drops the request, leaving the live scan mode at 21 forever. The module therefore never guesses: each layer remembers the discoverable value *this* ROM actually fed it, and the `AdapterProperties` path is only used once that ROM has fed it a value itself.
+
+Two things still win over the pin: turning Bluetooth off (the module only re-asserts while the live state is `STATE_ON` and never calls `enable()`; switching it back off and on re-applies the posture from the enable callback) and an explicit scan-mode request from another UID (the pin is released and the log says it will be re-applied the next time Bluetooth is turned on).
+
+## 5. 功能四：为什么"分享面板没有蓝牙"，以及怎么改 / Feature 4: why Bluetooth is missing from the share sheet
 
 分享面板的候选项来自**共享 App 自己**调 `PackageManager.queryIntentActivities(ACTION_SEND, type)`，而能不能匹配上是**系统蓝牙 APK 的 manifest** 决定的。`BluetoothOppLauncherActivity` 的 filter 只列了：
 
@@ -139,13 +157,17 @@ application/vnd.openxmlformats-officedocument.*  application/x-hwp
 
 代价：这是一个全局 hook，影响整机所有分享面板；所以它的异常模式是 `PROTECTIVE`，且只在 `ACTION_SEND` / `ACTION_SEND_MULTIPLE` 上做动作。
 
-## 6. 诊断
+**EN** — The share sheet's candidates come from the sharing app calling `PackageManager.queryIntentActivities(ACTION_SEND, type)`, and whether Bluetooth matches is decided by the system Bluetooth APK's manifest, whose filter lists only the types above — `application/vnd.android.package-archive` is not among them, so sharing an APK never offers Bluetooth. File managers that *do* show it simply declare the APK as `application/zip` (or name the component explicitly); they bypass the filter, and we cannot rewrite somebody else's manifest. What we can change is the **resolution result itself**: the query is issued by the app but executed in system_server, so appending one Bluetooth entry there covers every app at once.
+
+Key points: never hand-roll a `ResolveInfo` — re-run the same method with the type forced to `application/zip` (through `getInvoker(method).setType(ORIGIN)`, which bypasses this hook and cannot recurse) and reuse the real Bluetooth entry from that result, so its label, icon, `filter` and match flags are genuine and "set as default" will not NPE; poll candidate classes (`IPackageManagerBase` → `PackageManagerService` → `PackageManagerInternalBase` → `PackageManagerServiceEx`) because Android 13+ declares the method on `IPackageManagerBase` while Android 9-12 still has it on `PackageManagerService`, and hooking only the latter installs 0 hooks on a modern ROM; cache per user ID for 10 s; skip when the list already contains Bluetooth; **inject nothing on failure** — with Bluetooth off the activity is `android:enabled="false"`, the probe finds nothing and the caller keeps the list it already had; the click is an explicit component launch, so it goes straight into feature 2's send path. The cost is a global hook, hence `PROTECTIVE` exception mode and action only on `ACTION_SEND` / `ACTION_SEND_MULTIPLE`.
+
+## 6. 诊断 / Diagnostics
 
 日志统一 tag `BTUnlock`：
 
 ```bash
 adb logcat -s BTUnlock
-# 详细日志要在目标进程启动前设置
+# 详细日志要在目标进程启动前设置 / set this before the target process starts
 adb shell setprop log.tag.BTUnlock VERBOSE
 ```
 
@@ -161,7 +183,9 @@ adb shell setprop log.tag.BTUnlock VERBOSE
 - 某个功能数为 0 会单独打 WARN，并把候选类里查到的方法名列出来，方便对着 ROM 源码补候选名，而不是直接崩掉被注入的进程。
 - 功能四的日志只在 system_server，而 `logcat` 环形缓冲区很小，开机那段容易被冲掉；rooted 机器可以直接看框架落盘的日志：`grep btunlock /data/adb/lspd/log/*modules*.log`。
 
-## 7. 刻意保留 / 不做的事
+**EN** — All logging uses the single tag `BTUnlock`. Two lines tell you whether the module got in and how many hooks each feature installed: `[com.android.bluetooth] hooks installed: receive=N, send=N, discoverable=N` and `[system_server] hooks installed: discoverable-fallback=N, share-sheet=M`. If Bluetooth is missing from the share sheet and there is no `[system_server]` line at all, the module never reached system_server — the scope is missing `system` (tick it, then reboot). If that line exists with `share-sheet=0` and `no hookable queryIntentActivities …`, this ROM moved the resolver method and you need to extend the candidate list using the names the WARN prints. If `asserted mode … (found 21, watchdog)` repeats every 5 s without end, the assert goes out but the stack ignores it — almost always a framework value handed to a HAL-only setter; normally it appears once or twice per boot. A zero count for any feature logs a WARN with the method names found in the candidate classes, so a renamed ROM method is a documentation gap rather than a crash. Feature 4 logs live only in system_server, where the `logcat` ring buffer is small and boot-time lines get evicted; on a rooted device the framework's own log is steadier: `grep btunlock /data/adb/lspd/log/*modules*.log`.
+
+## 7. 刻意保留 / 不做的事 / Deliberately kept, deliberately not done
 
 - **不破坏其它校验**：长度为 0、文件名为空、既无扩展名也无 TYPE 头，一律照旧拒绝（没有名字/类型可落地）。
 - **不碰安全修复**：`BluetoothOppSendFileInfo` 的 `isForbiddenContent`（CVE-2022-35310991 系列）与"只允许外部存储 `file://`"限制原样保留 —— 那是权限问题不是类型问题，放开等于让任意 App 读它没被授权的文件。
@@ -170,7 +194,9 @@ adb shell setprop log.tag.BTUnlock VERBOSE
 - **拒绝热重载**：`onHotReloading()` 返回 `false` 并打日志。现代 API 热重载不会重放包生命周期回调，默认实现还会把老 hook 全 `unhook()`，接了反而留下一个静默无 hook 的进程。
 - **不开混淆**：入口类名要被 `java_init.list` 指到、目标类靠名字反射查，`minifyEnabled false`；`proguard-rules.pro` 只是给以后打开 R8 的人准备的 libxposed 官方规则。
 
-## 8. 已知限制
+**EN** — Every other validation stays: zero length, empty name, or neither extension nor TYPE header is still refused, because there is no name or type to land on. The security fixes stay: `isForbiddenContent` in `BluetoothOppSendFileInfo` and the "external storage `file://` only" rule are untouched — they are authorisation, not typing, and relaxing them would let any app read files it was never granted. `FileUriExposedException` is not handled: it is the platform's Android 9+ `file://` restriction, and the hook neither drops a `file://` URI nor works around the platform. Switching Bluetooth off always wins, as described above. `onHotReloading()` returns `false` on purpose — a modern-API hot reload does not replay the package lifecycle callbacks and the default implementation unhooks everything, which would leave a silently unhooked process. Minification is off because the entry class name is referenced by `java_init.list` and target classes are found by name; `proguard-rules.pro` only carries the official libxposed rules for whoever enables R8 later.
+
+## 8. 已知限制 / Known limitations
 
 1. **共享 App 自己不给类型**时，补类型只发生在蓝牙进程内；面板里那条蓝牙是功能四加的，点开才会走补类型逻辑。
 2. 功能四在**蓝牙未打开时不显示蓝牙**（该 activity 本身是 disabled），这是设计而非 bug。
@@ -180,7 +206,16 @@ adb shell setprop log.tag.BTUnlock VERBOSE
 6. `system` 这个 token 在 LSPosed 2.1.1 上验证过。别的框架若把 system_server 记成别的名字，症状是日志里没有 `[system_server] hooks installed` 那一行且功能四静默失效，功能一/二/三不受影响 —— 按 §6 的判断流程走，不要先怀疑 hook 代码。
 7. 真机验证覆盖 Android 10 与 Android 16 各一台；Android 11-15 是按 AOSP 源码推出的同一套形状匹配，未逐版验证。
 
-## 9. 结构
+**EN** —
+1. When the sharing app supplies no type at all, the type is filled in only inside the Bluetooth process; the Bluetooth row in the sheet comes from feature 4 and the fill-in logic runs after you tap it.
+2. Feature 4 shows no Bluetooth row while Bluetooth is off — the activity itself is disabled. That is by design.
+3. Feature 4 assumes the sheet asks the system for resolution. A custom sheet with its own hard-coded list, which never queries the resolver, will still miss it.
+4. "Permanently" in feature 3 depends on the Bluetooth process being alive: up to 5 s of gap while it restarts, and discoverable is only re-asserted at the enable callback, a property change, or the watchdog. If a ROM renames all three setter layers the log prints `discoverable: nothing reachable to set the mode with …` and only the timeout clamp remains — i.e. you are back to visiting the pairing screen once.
+5. No UI and no notifications: the package has a single `<application>` node, no icon and no launcher entry.
+6. The `system` token was verified on LSPosed 2.1.1. If another framework records system_server under a different name, feature 4 fails silently while 1/2/3 keep working; follow the §6 decision path before suspecting hook code.
+7. Real-device testing covers one Android 10 and one Android 16 phone; Android 11-15 relies on the same shape-matching derived from AOSP source and is not individually verified.
+
+## 9. 结构 / Layout
 
 ```
 app/src/main/resources/META-INF/xposed/
@@ -190,8 +225,13 @@ app/src/main/resources/META-INF/xposed/
 app/src/main/java/com/btunlock/
   ModuleEntry.java            入口：生命周期回调 + 按包安装 + 热重载拒绝
   core/Hooks.java             候选类查找、方法形状匹配、hook 安装（PROTECTIVE + setId）、deoptimize、invokeOriginal
-  hooks/OppReceiveHooks.java  功能一
-  hooks/OppSendHooks.java     功能二
-  hooks/ScanModeHooks.java    功能三（断言阶梯 公开 API→AdapterService→AdapterProperties + 实例捕获 + 看门狗）
-  hooks/ShareSheetHooks.java  功能四（system_server 意图解析注入）
+  hooks/OppReceiveHooks.java  功能一 / feature 1
+  hooks/OppSendHooks.java     功能二 / feature 2
+  hooks/ScanModeHooks.java    功能三（断言阶梯 公开 API→AdapterService→AdapterProperties + 实例捕获 + 看门狗）/ feature 3
+  hooks/ShareSheetHooks.java  功能四（system_server 意图解析注入）/ feature 4
 ```
+
+`ModuleEntry.java` 只做生命周期回调、按包安装和热重载拒绝；所有查找与匹配逻辑集中在 `core/Hooks.java`，
+四个功能各自一个文件，互不依赖，某个 ROM 少一个方法只会让那一格变成 WARN。
+
+**EN** — `ModuleEntry.java` is lifecycle + per-package installation + hot-reload refusal; lookup and shape matching live in `core/Hooks.java`; each feature is its own file, so a missing method on some ROM turns one table cell into a WARN instead of taking the module down.

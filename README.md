@@ -23,7 +23,9 @@ JDK 17 + Gradle 9.3.1（wrapper 已带上）+ AGP 9.1.0，compile/target SDK 36�
 JAVA_HOME="<你的 JDK 17 路径>" ./gradlew :app:assembleDebug :app:assembleRelease
 ```
 
-产物在 `app/build/outputs/apk/{debug,release}/`。两个构建类型都不开混淆（入口类名要被 `java_init.list` 指到、目标类靠名字反射查）；release 目前复用 debug 签名。
+产物在 `app/build/outputs/apk/{debug,release}/`。两个构建类型都不开混淆（入口类名要被 `java_init.list` 指到、目标类靠名字反射查）。
+
+发布版 APK 在仓库的 [Releases](https://github.com/luoyangshovel/Bluetooth_Transfer_Unlock/releases)。签名用本地 `keystore.properties` + `keystore/release.keystore`（两者都已 gitignore，不进仓库），证书 `CN=luoyangshovel`，SHA-256 `0254be82406084e5f675b3ce1b76e713d1c4023d003610a9e041eb3589a345d5`；这两个文件不存在时 release 构建自动退回 debug 签名，所以自己 clone 出来的包和 Release 里的包签名不同，别拿旧包覆盖安装。
 
 ## 启用
 

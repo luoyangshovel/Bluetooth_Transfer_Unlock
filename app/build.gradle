@@ -2,6 +2,14 @@ plugins {
     id 'com.android.application' version '9.1.0'
 }
 
+// Release signing comes from keystore.properties, which is gitignored; without it the
+// release build falls back to the debug key so a fresh clone still builds.
+def keystoreProps = new Properties()
+def keystorePropsFile = rootProject.file('keystore.properties')
+if (keystorePropsFile.exists()) {
+    keystoreProps.load(new FileInputStream(keystorePropsFile))
+}
+
 android {
     namespace 'com.btunlock'
     compileSdk 36
@@ -19,6 +27,17 @@ android {
         buildConfig false
     }
 
+    signingConfigs {
+        release {
+            if (!keystoreProps.isEmpty()) {
+                storeFile rootProject.file(keystoreProps.storeFile)
+                storePassword keystoreProps.storePassword
+                keyAlias keystoreProps.keyAlias
+                keyPassword keystoreProps.keyPassword
+            }
+        }
+    }
+
     buildTypes {
         debug {
             minifyEnabled false
@@ -26,7 +45,7 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.debug
+            signingConfig keystoreProps.isEmpty() ? signingConfigs.debug : signingConfigs.release
         }
     }
 

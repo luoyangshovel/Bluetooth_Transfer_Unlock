@@ -57,14 +57,6 @@ adb shell setprop log.tag.BTUnlock VERBOSE   # set this before the target proces
 - Not discoverable: `asserted mode … (found 21, watchdog)` every 5 s without end means the assert goes out but the stack ignores it — almost always a framework value handed to a HAL-only setter. Normally it appears once or twice per boot.
 - system_server logs are evicted from `logcat` quickly; on a rooted device use `grep bluetoothtransferunlock /data/adb/lspd/log/*modules*.log`.
 
-## Deliberately not done
-
-- **No other validation is broken**: zero length, empty file name, or neither extension nor TYPE header is still refused.
-- **Security fixes stay**: `isForbiddenContent` in `BluetoothOppSendFileInfo` (CVE-2022-35310991 family) and the "external storage `file://` only" rule are untouched — they are authorisation, not typing.
-- **`FileUriExposedException` is not handled**: it is the platform's Android 9+ restriction; the hook neither drops `file://` URIs nor works around the platform.
-- **The user turning off Bluetooth always wins**: re-assertion only while the live state is `STATE_ON`, `enable()` is never called, and an explicit request from another UID releases the pin until Bluetooth is switched off and on.
-- **Hot reload is refused**: `onHotReloading()` returns `false` — a modern-API hot reload does not replay the package lifecycle callbacks and the default implementation unhooks everything, leaving a silently unhooked process.
-
 ## Known limitations
 
 1. When the sharing app supplies no type, the fill-in happens only inside the Bluetooth process; the row in the sheet comes from feature 4 and runs after you tap it.

@@ -57,14 +57,6 @@ adb shell setprop log.tag.BTUnlock VERBOSE   # 要在目标进程启动前设置
 - 搜不到：`asserted mode … (found 21, watchdog)` 每 5 s 刷不完 → 断言发出去了但协议栈不认，九成是把框架值喂给了只吃 HAL 值的方法；正常一个开机周期只出现一两次。
 - system_server 的日志在 `logcat` 里很容易被冲掉，rooted 机器直接看 `grep bluetoothtransferunlock /data/adb/lspd/log/*modules*.log`。
 
-## 刻意不做
-
-- **不破坏其它校验**：长度为 0、文件名为空、既无扩展名也无 TYPE 头，照旧拒绝。
-- **不碰安全修复**：`BluetoothOppSendFileInfo.isForbiddenContent`（CVE-2022-35310991 系列）与"只允许外部存储 `file://`"原样保留 —— 那是权限问题不是类型问题。
-- **不处理 `FileUriExposedException`**：Android 9+ 的系统限制，模块不丢弃 `file://` URI，也不代为绕过。
-- **不阻止用户关蓝牙**：只在实时 `STATE_ON` 时补 discoverable，从不调 `enable()`；别的 UID 明确请求别的 scan mode 会解除 pin，直到蓝牙关开一次。
-- **拒绝热重载**：`onHotReloading()` 返回 `false`——现代 API 热重载不重放包生命周期回调，默认实现还会把老 hook 全 `unhook()`，接了只剩一个静默无 hook 的进程。
-
 ## 已知限制
 
 1. 共享 App 自己不给类型时，补类型只发生在蓝牙进程内；面板里那条蓝牙是功能四加的，点开才走补类型逻辑。

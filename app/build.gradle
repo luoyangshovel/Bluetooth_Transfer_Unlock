@@ -16,7 +16,10 @@ android {
     buildToolsVersion '36.0.0'
 
     defaultConfig {
-        applicationId 'app.bluetoothtransferunlock'
+        // Deliberately different from the namespace: Xposed-Modules-Repo rejects an
+        // application id with fewer than three segments, so the installed id carries
+        // the io.github.<author> prefix while the code stays in the short package.
+        applicationId 'io.github.luoyangshovel.bluetoothtransferunlock'
         minSdk 26
         targetSdk 36
         versionCode 1

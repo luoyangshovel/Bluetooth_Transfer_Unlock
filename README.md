@@ -31,7 +31,7 @@ JAVA_HOME="<你的 JDK 17 路径>" ./gradlew :app:assembleDebug :app:assembleRel
 - `com.android.bluetooth` —— 功能一/二/三的全部实现。**只要这三项，勾这一条就够。**
 - `system` —— 功能四的唯一开关（意图解析跑在 system_server）。不需要它就别勾。
 
-重启：功能一/二/三重启蓝牙进程即可（停止运行蓝牙，或 `adb shell am force-stop com.android.bluetooth`）；**功能四必须重启整机**，system_server 不会因为蓝牙进程重启而重新加载模块。
+重启：功能一/二/三重启蓝牙进程即可（强行停止运行蓝牙，或 `adb shell am force-stop com.android.bluetooth`）；**功能四必须重启整机**，system_server 不会因为蓝牙进程重启而重新加载模块。
 
 模块靠 `META-INF/xposed/java_init.list` 被识别，manifest 里没有 legacy 的 `xposedmodule/xposedminversion/xposedscope`；工程里没有 `de.robv.android.xposed.*`。
 

@@ -31,7 +31,7 @@ JAVA_HOME="<path to your JDK 17>" ./gradlew :app:assembleDebug :app:assembleRele
 - `com.android.bluetooth` — all of features 1/2/3. **That one entry is enough if you don't want feature 4.**
 - `system` — the only switch for feature 4 (intent resolution runs in system_server). Leave it unticked if you don't need it.
 
-Restart: force-stopping the Bluetooth app (or `adb shell am force-stop com.android.bluetooth`) reloads features 1/2/3; **feature 4 needs a full reboot**, because system_server does not reload the module when the Bluetooth process restarts.
+Restart: features 1/2/3 only need the Bluetooth process restarted; **feature 4 needs a full reboot**, because system_server does not reload the module when the Bluetooth process restarts.
 
 Recognition goes through `META-INF/xposed/java_init.list`; the manifest carries no legacy `xposedmodule/xposedminversion/xposedscope`, and the source contains no `de.robv.android.xposed.*`.
 

@@ -11,12 +11,12 @@ if (keystorePropsFile.exists()) {
 }
 
 android {
-    namespace 'com.btunlock'
+    namespace 'app.bluetoothtransferunlock'
     compileSdk 36
     buildToolsVersion '36.0.0'
 
     defaultConfig {
-        applicationId 'com.btunlock'
+        applicationId 'app.bluetoothtransferunlock'
         minSdk 26
         targetSdk 36
         versionCode 1

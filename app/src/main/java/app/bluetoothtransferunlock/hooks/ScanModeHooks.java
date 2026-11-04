@@ -1,4 +1,4 @@
-package com.btunlock.hooks;
+package app.bluetoothtransferunlock.hooks;
 
 import android.app.Application;
 import android.os.Binder;
@@ -11,7 +11,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.btunlock.core.Hooks;
+import app.bluetoothtransferunlock.core.Hooks;
 
 import java.lang.reflect.Executable;
 import java.lang.reflect.Field;

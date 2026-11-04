@@ -59,7 +59,7 @@ adb shell setprop log.tag.BTUnlock VERBOSE   # set this before the target proces
 - `[com.android.bluetooth] hooks installed: receive=N, send=N, discoverable=N` and `[system_server] hooks installed: discoverable-fallback=N, share-sheet=M` — these two lines say what got installed.
 - Bluetooth missing from the sheet: no `[system_server]` line at all → the scope lacks `system` (tick it, reboot). That line present but `share-sheet=0` with `no hookable queryIntentActivities …` → this ROM moved the method; extend the candidates from the names in the WARN.
 - Not discoverable: `asserted mode … (found 21, watchdog)` every 5 s without end means the assert goes out but the stack ignores it — almost always a framework value handed to a HAL-only setter. Normally it appears once or twice per boot.
-- system_server logs are evicted from `logcat` quickly; on a rooted device use `grep btunlock /data/adb/lspd/log/*modules*.log`.
+- system_server logs are evicted from `logcat` quickly; on a rooted device use `grep bluetoothtransferunlock /data/adb/lspd/log/*modules*.log`.
 
 ## Deliberately not done
 
@@ -81,7 +81,7 @@ adb shell setprop log.tag.BTUnlock VERBOSE   # set this before the target proces
 
 ```
 app/src/main/resources/META-INF/xposed/   java_init.list / module.prop / scope.list
-app/src/main/java/com/btunlock/
+app/src/main/java/app/bluetoothtransferunlock/
   ModuleEntry.java            entry point: lifecycle + per-package install + hot-reload refusal
   core/Hooks.java             candidate lookup, method shape matching, hook install, deoptimize, invokeOriginal
   hooks/{OppReceive,OppSend,ScanMode,ShareSheet}Hooks.java   features 1-4, independent of each other

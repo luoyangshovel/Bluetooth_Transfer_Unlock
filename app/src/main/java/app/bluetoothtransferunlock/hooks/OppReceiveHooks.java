@@ -1,10 +1,10 @@
-package com.btunlock.hooks;
+package app.bluetoothtransferunlock.hooks;
 
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 
-import com.btunlock.core.Hooks;
+import app.bluetoothtransferunlock.core.Hooks;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;

@@ -1,4 +1,4 @@
-package com.btunlock.hooks;
+package app.bluetoothtransferunlock.hooks;
 
 import android.app.Activity;
 import android.content.Context;
@@ -11,7 +11,7 @@ import android.webkit.MimeTypeMap;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.btunlock.core.Hooks;
+import app.bluetoothtransferunlock.core.Hooks;
 
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;

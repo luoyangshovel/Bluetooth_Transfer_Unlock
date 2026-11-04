@@ -1,4 +1,4 @@
-package com.btunlock;
+package app.bluetoothtransferunlock;
 
 import android.os.Build;
 import android.util.Log;
@@ -6,11 +6,11 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.btunlock.core.Hooks;
-import com.btunlock.hooks.OppReceiveHooks;
-import com.btunlock.hooks.OppSendHooks;
-import com.btunlock.hooks.ScanModeHooks;
-import com.btunlock.hooks.ShareSheetHooks;
+import app.bluetoothtransferunlock.core.Hooks;
+import app.bluetoothtransferunlock.hooks.OppReceiveHooks;
+import app.bluetoothtransferunlock.hooks.OppSendHooks;
+import app.bluetoothtransferunlock.hooks.ScanModeHooks;
+import app.bluetoothtransferunlock.hooks.ShareSheetHooks;
 
 import java.util.Collections;
 import java.util.HashSet;

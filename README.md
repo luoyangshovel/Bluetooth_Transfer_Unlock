@@ -59,7 +59,7 @@ adb shell setprop log.tag.BTUnlock VERBOSE   # 要在目标进程启动前设置
 - `[com.android.bluetooth] hooks installed: receive=N, send=N, discoverable=N` / `[system_server] hooks installed: discoverable-fallback=N, share-sheet=M` —— 装没装上、装了几条，看这两行。
 - 面板没有蓝牙：连 `[system_server]` 这行都没有 → 作用域缺 `system`（勾上重启整机）；有这行但 `share-sheet=0` 并带 `no hookable queryIntentActivities …` → 这个 ROM 换了方法位置，照 WARN 列出的类名/方法名补候选。
 - 搜不到：`asserted mode … (found 21, watchdog)` 每 5 s 刷不完 → 断言发出去了但协议栈不认，九成是把框架值喂给了只吃 HAL 值的方法；正常一个开机周期只出现一两次。
-- system_server 的日志在 `logcat` 里很容易被冲掉，rooted 机器直接看 `grep btunlock /data/adb/lspd/log/*modules*.log`。
+- system_server 的日志在 `logcat` 里很容易被冲掉，rooted 机器直接看 `grep bluetoothtransferunlock /data/adb/lspd/log/*modules*.log`。
 
 ## 刻意不做
 
@@ -81,7 +81,7 @@ adb shell setprop log.tag.BTUnlock VERBOSE   # 要在目标进程启动前设置
 
 ```
 app/src/main/resources/META-INF/xposed/   java_init.list / module.prop / scope.list
-app/src/main/java/com/btunlock/
+app/src/main/java/app/bluetoothtransferunlock/
   ModuleEntry.java            入口：生命周期 + 按包安装 + 热重载拒绝
   core/Hooks.java             候选类查找、方法形状匹配、hook 安装、deoptimize、invokeOriginal
   hooks/{OppReceive,OppSend,ScanMode,ShareSheet}Hooks.java   功能一~四，互不依赖

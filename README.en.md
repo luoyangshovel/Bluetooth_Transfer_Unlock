@@ -23,10 +23,6 @@ JDK 17 + Gradle 9.3.1 (wrapper included) + AGP 9.1.0, compile/target SDK 36, min
 JAVA_HOME="<path to your JDK 17>" ./gradlew :app:assembleDebug :app:assembleRelease
 ```
 
-APKs land in `app/build/outputs/apk/{debug,release}/`. Minification stays off in both build types (the entry class name is referenced by `java_init.list` and target classes are found by name).
-
-Prebuilt APKs are in the repository's [Releases](https://github.com/luoyangshovel/Bluetooth_Transfer_Unlock/releases). Releases are signed with a local `keystore.properties` + `keystore/release.keystore` (both gitignored, never committed); the certificate is `CN=luoyangshovel`, SHA-256 `0254be82406084e5f675b3ce1b76e713d1c4023d003610a9e041eb3589a345d5`. When those two files are absent the release build falls back to the debug key, so a package you build yourself will not have the release signature and cannot be installed over it.
-
 ## Enabling
 
 `staticScope=true` in `module.prop`, so `META-INF/xposed/scope.list` only pre-fills the defaults; you can still tick each entry separately after installing:

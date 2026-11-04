@@ -1,0 +1,6 @@
+# libxposed module configuration (see META-INF/xposed/module.prop)
+# minApiVersion / targetApiVersion are the libxposed API levels, not Android SDK levels.
+minApiVersion=102
+targetApiVersion=102
+# The scope is fully declared in scope.list: the user only has to enable the module.
+staticScope=true

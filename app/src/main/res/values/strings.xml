@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Bluetooth Transfer Unlock</string>
+    <string name="app_description">解除蓝牙发送与接收文件类型与配对界面以外不可见的限制，若无需强制所有文件类型分享时在面板内添加蓝牙功能，作用域仅选择蓝牙即可，无需选择system。</string>
+</resources>

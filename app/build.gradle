@@ -1,0 +1,51 @@
+plugins {
+    id 'com.android.application' version '9.1.0'
+}
+
+android {
+    namespace 'com.btunlock'
+    compileSdk 36
+    buildToolsVersion '36.0.0'
+
+    defaultConfig {
+        applicationId 'com.btunlock'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '1.0'
+    }
+
+    buildFeatures {
+        buildConfig false
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    // Provided by the LSPosed / Vector framework at runtime; never packaged into the APK.
+    compileOnly 'io.github.libxposed:api:102.0.0'
+    // libxposed:api publishes no transitive dependencies of its own, and its sources
+    // (and ours) are annotated with the androidx nullability markers. Non-transitive so
+    // that kotlin-stdlib, which annotation-jvm pulls in, never reaches this APK.
+    compileOnly('androidx.annotation:annotation-jvm:1.10.0') { transitive = false }
+}

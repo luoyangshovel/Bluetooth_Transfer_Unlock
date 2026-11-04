@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      libxposed (modern API) modules are identified by
+      META-INF/xposed/{java_init.list,module.prop,scope.list}; the legacy
+      xposedmodule / xposedminversion / xposedscope meta-data is deliberately
+      absent so that no framework tries to load this module through the legacy
+      de.robv.android.xposed path. The package therefore has no component at all.
+    -->
+    <application
+        android:allowBackup="false"
+        android:description="@string/app_description"
+        android:hasCode="true"
+        android:label="@string/app_name"
+        tools:ignore="MissingApplicationIcon" />
+</manifest>

@@ -1,0 +1,17 @@
+# Build outputs
+build/
+app/build/
+.gradle/
+local.properties
+*.apk
+*.aab
+
+# Signing material - keep it out of the repository
+*.jks
+*.keystore
+*.ks
+keystore.properties
+
+# IDE
+.idea/
+*.iml

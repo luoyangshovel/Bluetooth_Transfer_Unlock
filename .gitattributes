@@ -1,0 +1,15 @@
+# Normalize line endings so the repository is identical on every platform.
+* text=auto eol=lf
+
+# Windows users need these as CRLF; the shell script must stay LF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Never run diff/eol conversion on binaries.
+*.jar binary
+*.apk binary
+*.aab binary
+*.png binary
+*.webp binary
+*.keystore binary
+*.jks binary

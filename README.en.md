@@ -2,6 +2,7 @@
 
 [中文](README.md) | English
 
+> [!WARNING]
 > **Note: the author only knows a little about Android and supplied the ideas — every change in this repository is AI-generated. Review the code before using it, because these hooks touch the system Bluetooth stack and can cause irreversible damage.**
 
 A LSPosed module on the modern libxposed API (102): no UI, no configuration screen. Enable the module, tick the scope, restart the target process. It lifts four Bluetooth OPP limits:

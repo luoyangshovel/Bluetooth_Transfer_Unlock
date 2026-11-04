@@ -2,6 +2,7 @@
 
 中文 | [English](README.en.md)
 
+> [!WARNING]
 > **注意，本人只对Android系统有少量了解，项目中本人只提供想法，所有修改均为AIGC，使用前务必审查项目代码防止出现不可逆破坏。**
 
 LSPosed 模块，现代 libxposed API（102）：无 UI、无配置界面，启用模块 → 勾选作用域 → 重启目标进程即可。解开蓝牙 OPP 的四条限制：

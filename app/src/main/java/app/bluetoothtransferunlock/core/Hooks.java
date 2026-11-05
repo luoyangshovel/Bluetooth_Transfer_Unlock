@@ -33,8 +33,12 @@ public final class Hooks {
     /** {@code BluetoothAdapter.SCAN_MODE_NONE}. */
     public static final int SCAN_MODE_NONE = 20;
 
-    /** {@code AbstractionLayer.BT_SCAN_MODE_CONNECTABLE_DISCOVERABLE} (Android 9-12 pass the HAL value). */
-    static final int HAL_SCAN_MODE_DISCOVERABLE = 2;
+    /**
+     * {@code AbstractionLayer.BT_SCAN_MODE_CONNECTABLE_DISCOVERABLE}. Android 9-12 hand it to
+     * {@code AdapterProperties.setScanMode}, and some Android 13 builds do too, which is why the
+     * scan-mode hooks probe for it instead of assuming the framework encoding.
+     */
+    public static final int HAL_SCAN_MODE_DISCOVERABLE = 2;
     static final int HAL_SCAN_MODE_CONNECTABLE = 1;
     static final int HAL_SCAN_MODE_NONE = 0;
 

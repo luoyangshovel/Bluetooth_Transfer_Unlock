@@ -56,14 +56,18 @@ import java.util.List;
  * is handed the result of that conversion - the HAL value {@code 2}. Writing {@code 23} there is
  * accepted by the Java layer and dropped by the stack, so the mode never leaves {@code 21}. The
  * module therefore asks through {@code BluetoothAdapter} first, then {@code AdapterService}, and
- * only ever uses {@code AdapterProperties} with the value it watched that class actually receive.</p>
+ * only ever uses {@code AdapterProperties} with the value it watched that class actually receive.
+ * Because a phone that was never paired teaches the module nothing, the argument for the first two
+ * layers is not guessed but probed: one write per pass, and only the one the live scan mode agrees
+ * with is kept - see {@link #reapply}.</p>
  *
  * <p>What still wins:</p>
  * <ol>
  * <li>switching Bluetooth off - the mode is only re-applied while the adapter reports
  * {@code STATE_ON}, and nothing here ever calls {@code enable()};</li>
  * <li>an explicit scan mode request from another UID, which unpins until Bluetooth is
- * switched back on;</li>
+ * switched back on; the Bluetooth process's own writes - the demotion at the end of a
+ * discoverable window included - never count as one;</li>
  * <li>a native demotion is caught twice over, by {@code adapterPropertyChangedCallback} and
  * by the watchdog, because a clamped timeout is not always honoured.</li>
  * </ol>
@@ -79,6 +83,15 @@ public final class ScanModeHooks {
 
     /** Minimum gap between two re-assert attempts, so a chatty callback cannot loop. */
     private static final long RETRY_INTERVAL_MS = 1_000L;
+
+    /** How long the stack gets to answer a request before the probe moves to the next encoding. */
+    private static final long CONFIRM_GRACE_MS = 1_500L;
+
+    /**
+     * How long after the adapter came up the mode is still whatever the enable sequence left
+     * behind. Nothing during that window is a decision anybody made, the user included.
+     */
+    private static final long ENABLE_GRACE_MS = 10_000L;
 
     /** {@code BluetoothAdapter.STATE_ON}. */
     private static final int STATE_ON = 12;
@@ -168,6 +181,17 @@ public final class ScanModeHooks {
         volatile int discoverableArg = Hooks.SCAN_MODE_DISCOVERABLE;
         /** Only used to log the encoding once, so a confirmed default stays quiet. */
         volatile boolean serviceArgSeen;
+        /** The encoding behind {@link #discoverableArg} has been seen take effect. */
+        volatile boolean proven;
+        /** Index into the current probe, so every attempt is not the same refused guess. */
+        volatile int step;
+        /** Writes issued, so the probe only narrates its first pass. */
+        volatile int attempts;
+        /** The write whose effect the next pass is supposed to see, once anything is in flight. */
+        @Nullable
+        volatile Attempt pending;
+        /** A full pass over the probe without the live mode turning discoverable. */
+        volatile long exhaustedMs;
         /** {@code AdapterProperties} may want the HAL encoding, so it is only used once seen. */
         volatile int propertiesArg;
         volatile boolean propertiesArgLearned;
@@ -184,8 +208,42 @@ public final class ScanModeHooks {
         @Nullable
         volatile Accessors service;
         volatile long lastAttemptMs;
+        /** When the adapter last reached {@code STATE_ON}, for as long as NONE is its own doing. */
+        volatile long lastEnableMs;
         /** Keeps the "nothing reachable" warning to one line per process. */
         volatile boolean complained;
+    }
+
+    /** Which layer a probe step asks, in the order the encodings are documented to belong to. */
+    private static final int LAYER_ADAPTER = 0;
+    private static final int LAYER_SERVICE = 1;
+    /** Its candidate index is ignored: that layer only takes the value the ROM was seen using. */
+    private static final int LAYER_PROPERTIES = 2;
+
+    /** One discoverable request: a layer, and the encoding handed to it. */
+    private static final class Attempt {
+        final int layer;
+        final int arg;
+        final long startedMs;
+
+        Attempt(int layer, int arg, long startedMs) {
+            this.layer = layer;
+            this.arg = arg;
+            this.startedMs = startedMs;
+        }
+
+        /** {@code AdapterProperties} only holds what the stack last reported, so a write there
+         * that the read agrees with would prove nothing - it must not retire the pin. */
+        boolean provable() {
+            return layer != LAYER_PROPERTIES;
+        }
+
+        String describe() {
+            if (layer == LAYER_ADAPTER) {
+                return FRAMEWORK_ADAPTER;
+            }
+            return layer == LAYER_SERVICE ? "AdapterService" : "AdapterProperties";
+        }
     }
 
     private static final Pin PIN = new Pin();
@@ -354,6 +412,11 @@ public final class ScanModeHooks {
                 PIN.wanted = true;
                 h.log(Log.INFO, "discoverable: re-pinned, the adapter came up");
             }
+            // Whatever mode the enable sequence leaves behind only counts as a decision once the
+            // stack has settled, so the grace window is stamped on every turn of the adapter.
+            if (read(false) == STATE_ON) {
+                PIN.lastEnableMs = System.currentTimeMillis();
+            }
             verify(h, "adapter enable");
             return result;
         });
@@ -439,6 +502,9 @@ public final class ScanModeHooks {
             } else if (!PIN.serviceArgSeen || PIN.discoverableArg != mode) {
                 PIN.discoverableArg = mode;
                 PIN.serviceArgSeen = true;
+                // the ROM asked for this value itself, which beats anything the probe concludes
+                PIN.proven = true;
+                PIN.step = 0;
                 h.log(Log.INFO, "discoverable: "
                         + executable.getDeclaringClass().getSimpleName() + " takes " + mode
                         + " for discoverable (" + Hooks.describe(executable) + ")");
@@ -453,26 +519,32 @@ public final class ScanModeHooks {
             return;
         }
         if (Hooks.isNoneMode(mode)) {
-            // Switching the adapter off is always the user's decision. The posture comes
-            // back with the next enable, because the assert only runs in STATE_ON.
-            if (PIN.wanted) {
-                h.log(Log.INFO, "discoverable: unpinned, uid " + Binder.getCallingUid()
-                        + " requested scan mode " + mode + " via "
-                        + Hooks.describe(executable) + "; re-pinned when Bluetooth is on again");
+            // The Bluetooth process reaches NONE twice on its own: once inside the enable
+            // sequence and once as the tail of a discoverable window. Neither is a decision, so
+            // only a request from another UID unpins - switching Bluetooth off is covered by the
+            // STATE_ON gate in verify, and the posture comes back with the next enable.
+            if (fromAnotherApp) {
+                unpin(h, "uid " + Binder.getCallingUid() + " requested scan mode " + mode + " via "
+                        + Hooks.describe(executable));
             }
-            PIN.wanted = false;
             return;
         }
         if (fromAnotherApp) {
-            if (PIN.wanted) {
-                h.log(Log.INFO, "discoverable: unpinned, uid " + Binder.getCallingUid()
-                        + " requested scan mode " + mode + " via "
-                        + Hooks.describe(executable)
-                        + "; re-pinned when Bluetooth is on again");
-            }
-            PIN.wanted = false;
+            unpin(h, "uid " + Binder.getCallingUid() + " requested scan mode " + mode + " via "
+                    + Hooks.describe(executable));
         }
         // Otherwise it is the in-process demotion that follows a timeout: the watchdog fixes it.
+    }
+
+    /** Drop the posture until Bluetooth comes back; only a change of state is worth a line. */
+    private static void unpin(@NonNull Hooks h, @NonNull String reason) {
+        boolean wasWanted = PIN.wanted;
+        PIN.wanted = false;
+        PIN.pending = null;
+        if (wasWanted) {
+            h.log(Log.INFO, "discoverable: unpinned, " + reason
+                    + "; re-pinned when Bluetooth is on again");
+        }
     }
 
     private static synchronized void startWatchdog(@NonNull Hooks h) {
@@ -489,7 +561,15 @@ public final class ScanModeHooks {
         }
         h.log(Log.INFO, "discoverable: watchdog armed, checking the live scan mode every "
                 + POLL_INTERVAL_MS / 1000L + " s");
-        schedule(h, POLL_INTERVAL_MS);
+        schedule(h, nextDelayMs());
+    }
+
+    /**
+     * A write is answered by the stack inside {@link #CONFIRM_GRACE_MS}, so the passes around a
+     * probe run close together; with nothing in flight the watchdog goes back to polling.
+     */
+    private static long nextDelayMs() {
+        return PIN.pending != null ? RETRY_INTERVAL_MS : POLL_INTERVAL_MS;
     }
 
     private static void schedule(@NonNull Hooks h, long delayMs) {
@@ -503,7 +583,7 @@ public final class ScanModeHooks {
 
     private static void tick(@NonNull Hooks h) {
         verify(h, "watchdog");
-        schedule(h, POLL_INTERVAL_MS);
+        schedule(h, nextDelayMs());
     }
 
     /** Re-assert discoverable with a zero timeout if the live scan mode lost it. */
@@ -515,26 +595,71 @@ public final class ScanModeHooks {
         if (live < 0) {
             return; // no instance captured yet, or the stack has no scan mode to report
         }
+        long now = System.currentTimeMillis();
         if (Hooks.isDiscoverableMode(live)) {
-            return;
+            if (confirm(h, live)) {
+                return;
+            }
+            // only AdapterProperties answered, and that is a mirror of the stack, not the radio
+        } else {
+            reject(h, now);
         }
         int state = read(false);
         if (state >= 0 && state != STATE_ON) {
             return; // adapter off or still coming up: nothing to defend, and never re-enable
         }
-        if (Hooks.isNoneMode(live)) {
-            PIN.wanted = false;
-            h.log(Log.INFO, "discoverable: unpinned after the scan mode went to " + live
-                    + " while the adapter stayed on (" + reason
-                    + "); re-pinned when Bluetooth is on again");
-            return;
+        if (Hooks.isNoneMode(live) && now - PIN.lastEnableMs < ENABLE_GRACE_MS) {
+            return; // NONE right after an enable is the startup, not somebody's decision
         }
-        long now = System.currentTimeMillis();
         if (now - PIN.lastAttemptMs < RETRY_INTERVAL_MS) {
             return;
         }
         PIN.lastAttemptMs = now;
         reapply(h, live, reason);
+    }
+
+    /**
+     * @return true when the live mode is one a real setter produced. A write to
+     *     {@code AdapterProperties} only moves the mirror the read looks at, so it can never be
+     *     the evidence that stops the asserting.
+     */
+    private static boolean confirm(@NonNull Hooks h, int liveMode) {
+        Attempt attempt = PIN.pending;
+        if (attempt == null) {
+            return PIN.proven;
+        }
+        if (!attempt.provable()) {
+            return false;
+        }
+        PIN.pending = null;
+        boolean changed = PIN.discoverableArg != attempt.arg;
+        if (changed) {
+            PIN.discoverableArg = attempt.arg;
+            PIN.step = 0;
+        }
+        if (!PIN.proven || changed) {
+            h.log(Log.INFO, "discoverable: " + attempt.arg + " through " + attempt.describe()
+                    + " is what this ROM takes for discoverable (live mode " + liveMode + ")");
+        }
+        PIN.proven = true;
+        PIN.exhaustedMs = 0L;
+        return true;
+    }
+
+    /** The write in flight left the mode where it was, so the probe moves to the next encoding. */
+    private static void reject(@NonNull Hooks h, long now) {
+        Attempt attempt = PIN.pending;
+        if (attempt == null || now - attempt.startedMs < CONFIRM_GRACE_MS) {
+            return;
+        }
+        PIN.pending = null;
+        PIN.step = (PIN.step + 1) % PLAN.length;
+        if (PIN.step == 0 && (PIN.exhaustedMs == 0L || now - PIN.exhaustedMs > 60_000L)) {
+            PIN.exhaustedMs = now;
+            h.log(Log.WARN, "discoverable: no encoding reached the stack through "
+                    + attempt.describe() + " (last try " + attempt.arg + ") and the live mode "
+                    + "never turned discoverable, so the pin keeps probing");
+        }
     }
 
     /**
@@ -564,37 +689,113 @@ public final class ScanModeHooks {
     }
 
     /**
-     * Ask for discoverable through the first layer that is actually reachable. Every call goes
-     * out through the original body, so the module's own clamp cannot zero the duration it
-     * chose and its own request cannot be mistaken for the ROM teaching us an encoding.
+     * Probe order: the framework encoding first because that is what the documented setter takes,
+     * the HAL encoding second because that is what the stack carries, {@code AdapterProperties}
+     * last because it is a mirror rather than a door. The second column is an index into
+     * {@link #discoverableValue(int)}, resolved per attempt since the ROM can re-educate it.
+     */
+    private static final int[][] PLAN = {
+            {LAYER_ADAPTER, 0}, {LAYER_SERVICE, 0},
+            {LAYER_ADAPTER, 1}, {LAYER_SERVICE, 1},
+            {LAYER_PROPERTIES, 0},
+    };
+
+    /** The framework encoding the ROM uses, and the other one, which is what is worth probing. */
+    private static int discoverableValue(int candidate) {
+        int primary = PIN.discoverableArg;
+        if (candidate == 0) {
+            return primary;
+        }
+        return primary == Hooks.SCAN_MODE_DISCOVERABLE ? Hooks.HAL_SCAN_MODE_DISCOVERABLE
+                : Hooks.SCAN_MODE_DISCOVERABLE;
+    }
+
+    /** @return the first step at or after {@code from} this device can actually reach, or -1 */
+    private static int reachableStep(int from) {
+        for (int offset = 0; offset < PLAN.length; offset++) {
+            int step = (from + offset) % PLAN.length;
+            if (reachable(step)) {
+                return step;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean reachable(int step) {
+        int layer = PLAN[step][0];
+        if (layer == LAYER_PROPERTIES) {
+            Accessors properties = PIN.properties;
+            return properties != null && properties.setMode != null && PIN.propertiesArgLearned;
+        }
+        return setterFor(layer) != null;
+    }
+
+    /** @return the setter this device offers for that layer, or null when it does not have one */
+    @Nullable
+    private static Method setterFor(int layer) {
+        if (layer == LAYER_ADAPTER) {
+            return adapterInstance() == null ? null : PIN.adapterSetter;
+        }
+        Accessors service = PIN.service;
+        if (service == null || !service.usable()) {
+            return null;
+        }
+        return service.setModeWithTimeout != null ? service.setModeWithTimeout : service.setMode;
+    }
+
+    /**
+     * Ask for discoverable through one layer of the probe and leave the answer to the next pass.
+     * Every call goes out through the original body, so the module's own clamp cannot zero the
+     * duration it chose and its own request cannot be mistaken for the ROM teaching an encoding.
      */
     private static void reapply(@NonNull Hooks h, int liveMode, String reason) {
-        if (applyViaPublicAdapter(h, liveMode, reason) || applyViaService(h, liveMode, reason)
-                || applyViaProperties(h, liveMode, reason)) {
+        int step = reachableStep(PIN.step);
+        if (step < 0) {
+            if (!PIN.complained) {
+                PIN.complained = true;
+                h.log(Log.WARN, "discoverable: nothing reachable to set the mode with - no "
+                        + "BluetoothAdapter / AdapterService setter and AdapterProperties has never "
+                        + "been seen taking a discoverable value, so only timeouts are clamped here");
+            }
             return;
         }
-        if (!PIN.complained) {
-            PIN.complained = true;
-            h.log(Log.WARN, "discoverable: nothing reachable to set the mode with - no "
-                    + "BluetoothAdapter / AdapterService setter and AdapterProperties has never "
-                    + "been seen taking a discoverable value, so only timeouts are clamped here");
+        PIN.step = step;
+        int layer = PLAN[step][0];
+        // that layer only ever takes what the ROM was seen passing it, so it ignores the candidate
+        int arg = layer == LAYER_PROPERTIES ? PIN.propertiesArg : discoverableValue(PLAN[step][1]);
+        Attempt attempt = new Attempt(layer, arg, System.currentTimeMillis());
+        PIN.pending = attempt;
+        PIN.attempts++;
+        boolean applied;
+        if (layer == LAYER_ADAPTER) {
+            applied = applyViaPublicAdapter(h, attempt, liveMode, reason);
+        } else if (layer == LAYER_SERVICE) {
+            applied = applyViaService(h, attempt, liveMode, reason);
+        } else {
+            applied = applyViaProperties(h, attempt, liveMode, reason);
+        }
+        if (!applied) {
+            // a setter that threw is not worth a grace period: move on in the same pass
+            PIN.pending = null;
+            PIN.step = (step + 1) % PLAN.length;
         }
     }
 
     /** @return true when {@code BluetoothAdapter#setScanMode} carried the request. */
-    private static boolean applyViaPublicAdapter(@NonNull Hooks h, int liveMode, String reason) {
-        Method setter = PIN.adapterSetter;
+    private static boolean applyViaPublicAdapter(@NonNull Hooks h, @NonNull Attempt attempt,
+                                                 int liveMode, String reason) {
+        Method setter = setterFor(LAYER_ADAPTER);
         Object adapter = adapterInstance();
         if (setter == null || adapter == null) {
             return false;
         }
         try {
             if (PIN.adapterSetterTakesDuration) {
-                h.invokeOriginal(setter, adapter, PIN.discoverableArg, zeroFor(setter, 1));
+                h.invokeOriginal(setter, adapter, attempt.arg, zeroFor(setter, 1));
             } else {
-                h.invokeOriginal(setter, adapter, PIN.discoverableArg);
+                h.invokeOriginal(setter, adapter, attempt.arg);
             }
-            logAsserted(h, setter, PIN.discoverableArg, liveMode, reason);
+            logAsserted(h, attempt, setter, liveMode, reason);
             return true;
         } catch (Throwable t) {
             h.log(Log.WARN, "discoverable: the public setScanMode did not take", t);
@@ -603,7 +804,8 @@ public final class ScanModeHooks {
     }
 
     /** The service takes framework values and does the HAL conversion itself. */
-    private static boolean applyViaService(@NonNull Hooks h, int liveMode, String reason) {
+    private static boolean applyViaService(@NonNull Hooks h, @NonNull Attempt attempt,
+                                           int liveMode, String reason) {
         Accessors service = PIN.service;
         if (service == null || !service.usable()) {
             return false;
@@ -612,16 +814,15 @@ public final class ScanModeHooks {
             Method setter = service.setModeWithTimeout != null ? service.setModeWithTimeout
                     : service.setMode;
             if (service.setModeWithTimeout != null) {
-                h.invokeOriginal(setter, service.target, PIN.discoverableArg,
-                        zeroFor(setter, 1));
+                h.invokeOriginal(setter, service.target, attempt.arg, zeroFor(setter, 1));
             } else {
                 setTimeout(h, service);
                 Object[] args = service.setModeTakesPackage
-                        ? new Object[]{PIN.discoverableArg, selfPackage()}
-                        : new Object[]{PIN.discoverableArg};
+                        ? new Object[]{attempt.arg, selfPackage()}
+                        : new Object[]{attempt.arg};
                 h.invokeOriginal(setter, service.target, args);
             }
-            logAsserted(h, setter, PIN.discoverableArg, liveMode, reason);
+            logAsserted(h, attempt, setter, liveMode, reason);
             return true;
         } catch (Throwable t) {
             h.log(Log.WARN, "discoverable: asserting through AdapterService failed", t);
@@ -630,7 +831,8 @@ public final class ScanModeHooks {
     }
 
     /** Only ever used with the value this ROM was observed passing to that very method. */
-    private static boolean applyViaProperties(@NonNull Hooks h, int liveMode, String reason) {
+    private static boolean applyViaProperties(@NonNull Hooks h, @NonNull Attempt attempt,
+                                              int liveMode, String reason) {
         Accessors properties = PIN.properties;
         if (properties == null || !properties.properties || !PIN.propertiesArgLearned
                 || properties.setMode == null) {
@@ -638,8 +840,8 @@ public final class ScanModeHooks {
         }
         try {
             setTimeout(h, properties);
-            h.invokeOriginal(properties.setMode, properties.target, PIN.propertiesArg);
-            logAsserted(h, properties.setMode, PIN.propertiesArg, liveMode, reason);
+            h.invokeOriginal(properties.setMode, properties.target, attempt.arg);
+            logAsserted(h, attempt, properties.setMode, liveMode, reason);
             return true;
         } catch (Throwable t) {
             h.log(Log.WARN, "discoverable: asserting through AdapterProperties failed", t);
@@ -663,11 +865,20 @@ public final class ScanModeHooks {
         return 0;
     }
 
-    private static void logAsserted(@NonNull Hooks h, @NonNull Method setter, int mode,
-                                    int liveMode, String reason) {
-        h.log(Log.INFO, "discoverable: asserted mode " + mode + " through "
+    /**
+     * The first pass over the probe is the diagnosis worth keeping, so later repeats of the same
+     * request only reach the verbose log.
+     */
+    private static void logAsserted(@NonNull Hooks h, @NonNull Attempt attempt,
+                                    @NonNull Method setter, int liveMode, String reason) {
+        String line = "discoverable: asserted mode " + attempt.arg + " through "
                 + Hooks.describe(setter) + " with timeout 0 (found " + liveMode + ", "
-                + reason + ")");
+                + reason + ")";
+        if (PIN.attempts <= PLAN.length) {
+            h.log(Log.INFO, line);
+        } else {
+            h.verbose(line);
+        }
     }
 
     @Nullable

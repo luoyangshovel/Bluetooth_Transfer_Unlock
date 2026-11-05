@@ -48,13 +48,13 @@ Classes are looked up from a candidate list and methods matched by *name + param
 ## Diagnostics
 
 ```bash
-adb logcat -s BTUnlock
+adb logcat | grep BTUnlock   # not -s BTUnlock: LSPosed re-emits module output under its own tag, only the text carries BTUnlock
 adb shell setprop log.tag.BTUnlock VERBOSE   # set this before the target process starts
 ```
 
 - `[com.android.bluetooth] hooks installed: receive=N, send=N, discoverable=N` and `[system_server] hooks installed: discoverable-fallback=N, share-sheet=M` — these two lines say what got installed.
 - Bluetooth missing from the sheet: no `[system_server]` line at all → the scope lacks `system` (tick it, reboot). That line present but `share-sheet=0` with `no hookable queryIntentActivities …` → this ROM moved the method; extend the candidates from the names in the WARN.
-- Not discoverable: `asserted mode … (found 21, watchdog)` every 5 s without end means the assert goes out but the stack ignores it — almost always a framework value handed to a HAL-only setter. Normally it appears once or twice per boot.
+- Not discoverable: after a boot there should be one `discoverable: N through … is what this ROM takes for discoverable` line, which is the probe confirming the encoding. If `asserted mode …` keeps repeating with one `discoverable: no encoding reached the stack …` per minute → none of the three layers moved the live mode, so this ROM renamed or reshaped its setters; extend the candidates from the class and method names in the log.
 - system_server logs are evicted from `logcat` quickly; on a rooted device use `grep bluetoothtransferunlock /data/adb/lspd/log/*modules*.log`.
 
 ## Known limitations
